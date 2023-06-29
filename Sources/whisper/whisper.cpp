@@ -395,6 +395,7 @@ struct whisper_vocab {
 struct whisper_segment {
     int64_t t0;
     int64_t t1;
+    float avg_logprob;
 
     std::string text;
 
@@ -646,6 +647,7 @@ struct whisper_state {
     mutable std::mt19937 rng; // used for sampling at t > 0.0
 
     int lang_id = 0; // english by default
+    float lang_prob = 0;
 
     std::string path_model; // populated by whisper_init_from_file()
 #ifdef WHISPER_USE_COREML
@@ -3913,12 +3915,15 @@ int whisper_full_with_state(
             return -3;
         }
         state->lang_id = lang_id;
+        state->lang_prob = probs[lang_id];
         params.language = whisper_lang_str(lang_id);
 
         fprintf(stderr, "%s: auto-detected language: %s (p = %f)\n", __func__, params.language, probs[whisper_lang_id(params.language)]);
         if (params.detect_language) {
             return 0;
         }
+    } else {
+        state->lang_prob = 1;
     }
 
     if (params.token_timestamps) {
@@ -4497,6 +4502,8 @@ int whisper_full_with_state(
             const auto result_len = best_decoder.sequence.result_len;
 
             const auto & tokens_cur = best_decoder.sequence.tokens;
+            
+            const float avg_logprob = best_decoder.sequence.avg_logprobs;
 
             //WHISPER_PRINT_DEBUG("prompt_init.size() = %d, prompt.size() = %d, result_len = %d, seek_delta = %d\n", prompt_init.size(), prompt.size(), result_len, seek_delta);
 
@@ -4545,7 +4552,7 @@ int whisper_full_with_state(
 
                             //printf("tt0 = %d, tt1 = %d, text = %s, token = %s, token_id = %d, tid = %d\n", tt0, tt1, text.c_str(), ctx->vocab.id_to_token[tokens_cur[i].id].c_str(), tokens_cur[i].id, tokens_cur[i].tid);
 
-                            result_all.push_back({ tt0, tt1, text, {} });
+                            result_all.push_back({ tt0, tt1, avg_logprob, text, {} });
                             for (int j = i0; j <= i; j++) {
                                 result_all.back().tokens.push_back(tokens_cur[j]);
                             }
@@ -4589,7 +4596,7 @@ int whisper_full_with_state(
                         }
                     }
 
-                    result_all.push_back({ tt0, tt1, text, {} });
+                    result_all.push_back({ tt0, tt1, avg_logprob, text, {} });
                     for (int j = i0; j < (int) tokens_cur.size(); j++) {
                         result_all.back().tokens.push_back(tokens_cur[j]);
                     }
@@ -4753,6 +4760,14 @@ int whisper_full_lang_id(struct whisper_context * ctx) {
     return ctx->state->lang_id;
 }
 
+float whisper_full_lang_prob_from_state(struct whisper_state * state) {
+    return state->lang_prob;
+}
+
+float whisper_full_lang_prob(struct whisper_context * ctx) {
+    return ctx->state->lang_prob;
+}
+
 int64_t whisper_full_get_segment_t0_from_state(struct whisper_state * state, int i_segment) {
     return state->result_all[i_segment].t0;
 }
@@ -4767,6 +4782,14 @@ int64_t whisper_full_get_segment_t1_from_state(struct whisper_state * state, int
 
 int64_t whisper_full_get_segment_t1(struct whisper_context * ctx, int i_segment) {
     return ctx->state->result_all[i_segment].t1;
+}
+
+float whisper_full_get_segment_avg_logprob_from_state(struct whisper_state * state, int i_segment) {
+    return state->result_all[i_segment].avg_logprob;
+}
+
+float whisper_full_get_segment_avg_logprob(struct whisper_context * ctx, int i_segment) {
+    return ctx->state->result_all[i_segment].avg_logprob;
 }
 
 const char * whisper_full_get_segment_text_from_state(struct whisper_state * state, int i_segment) {

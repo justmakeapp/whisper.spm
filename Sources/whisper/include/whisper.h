@@ -450,12 +450,22 @@ extern "C" {
     // Language id associated with the provided state
     WHISPER_API int whisper_full_lang_id_from_state(struct whisper_state * state);
 
+    // Language probability associated with the context's default state
+    WHISPER_API float whisper_full_lang_prob(struct whisper_context * ctx);
+
+    // Language probability associated with the provided state
+    WHISPER_API float whisper_full_lang_prob_from_state(struct whisper_state * state);
+
     // Get the start and end time of the specified segment
     WHISPER_API int64_t whisper_full_get_segment_t0           (struct whisper_context * ctx, int i_segment);
     WHISPER_API int64_t whisper_full_get_segment_t0_from_state(struct whisper_state * state, int i_segment);
 
     WHISPER_API int64_t whisper_full_get_segment_t1           (struct whisper_context * ctx, int i_segment);
     WHISPER_API int64_t whisper_full_get_segment_t1_from_state(struct whisper_state * state, int i_segment);
+
+    // Get the confident probability of the specified segment
+    WHISPER_API float whisper_full_get_segment_avg_logprob           (struct whisper_context * ctx, int i_segment);
+    WHISPER_API float whisper_full_get_segment_avg_logprob_from_state(struct whisper_state * state, int i_segment);
 
     // Get the text of the specified segment
     WHISPER_API const char * whisper_full_get_segment_text           (struct whisper_context * ctx, int i_segment);
