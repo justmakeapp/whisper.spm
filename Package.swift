@@ -13,5 +13,5 @@ let package = Package(
         .target(name: "test-objc", dependencies:["whisper"]),
         .target(name: "test-swift", dependencies:["whisper"])
     ],
-    cxxLanguageStandard: CXXLanguageStandard.cxx11
+    cxxLanguageStandard: CXXLanguageStandard.cxx14
 )

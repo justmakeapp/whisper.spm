@@ -229,17 +229,17 @@ extern "C" {
     // The array must be whisper_lang_max_id() + 1 in size
     // ref: https://github.com/openai/whisper/blob/main/whisper/decoding.py#L18-L69
     WHISPER_API int whisper_lang_auto_detect(
-            struct whisper_context * ctx,
-                               int   offset_ms,
-                               int   n_threads,
-                             float * lang_probs);
+                struct whisper_context * ctx,
+            struct whisper_full_params   params,
+                                   int   offset_ms,
+                                float * lang_probs);
 
     WHISPER_API int whisper_lang_auto_detect_with_state(
-            struct whisper_context * ctx,
-              struct whisper_state * state,
-                               int   offset_ms,
-                               int   n_threads,
-                             float * lang_probs);
+                struct whisper_context * ctx,
+                  struct whisper_state * state,
+            struct whisper_full_params   params,
+                                   int   offset_ms,
+                                 float * lang_probs);
 
     WHISPER_API int whisper_n_len           (struct whisper_context * ctx); // mel length
     WHISPER_API int whisper_n_len_from_state(struct whisper_state * state); // mel length
@@ -313,6 +313,11 @@ extern "C" {
     // If not NULL, called before the encoder starts
     // If it returns false, the computation is aborted
     typedef bool (*whisper_encoder_begin_callback)(struct whisper_context * ctx, struct whisper_state * state, void * user_data);
+
+    // Abort callback
+    // If not NULL, called when detect language start and before encoder starts
+    // If it returns true, the computation is aborted
+    typedef bool(*whisper_abort_callback)(struct whisper_context * ctx, struct whisper_state * state, void * user_data);
 
     // Logits filter callback
     // Can be used to modify the logits before sampling
@@ -403,6 +408,10 @@ extern "C" {
         // called each time before the encoder starts
         whisper_encoder_begin_callback encoder_begin_callback;
         void * encoder_begin_callback_user_data;
+        
+        // called to check if inferences should abort
+        whisper_abort_callback abort_callback;
+        void * abort_callback_user_data;
 
         // called by each decoder to filter obtained logits
         whisper_logits_filter_callback logits_filter_callback;

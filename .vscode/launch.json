@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "sourceLanguages": ["swift"],
+            "name": "Debug test-swift",
+            "program": "${workspaceFolder:whisper.spm}/.build/debug/test-swift",
+            "args": [],
+            "cwd": "${workspaceFolder:whisper.spm}",
+            "preLaunchTask": "swift: Build Debug test-swift"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "sourceLanguages": ["swift"],
+            "name": "Release test-swift",
+            "program": "${workspaceFolder:whisper.spm}/.build/release/test-swift",
+            "args": [],
+            "cwd": "${workspaceFolder:whisper.spm}",
+            "preLaunchTask": "swift: Build Release test-swift"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "sourceLanguages": ["swift"],
+            "name": "Debug test-objc",
+            "program": "${workspaceFolder:whisper.spm}/.build/debug/test-objc",
+            "args": [],
+            "cwd": "${workspaceFolder:whisper.spm}",
+            "preLaunchTask": "swift: Build Debug test-objc"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "sourceLanguages": ["swift"],
+            "name": "Release test-objc",
+            "program": "${workspaceFolder:whisper.spm}/.build/release/test-objc",
+            "args": [],
+            "cwd": "${workspaceFolder:whisper.spm}",
+            "preLaunchTask": "swift: Build Release test-objc"
+        }
+    ]
+}

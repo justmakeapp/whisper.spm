@@ -19,6 +19,8 @@
 #include <regex>
 #include <random>
 
+#include "signal_recovery/signal_recovery.h"
+
 #if defined(GGML_BIG_ENDIAN)
 #include <bit>
 
@@ -95,6 +97,7 @@ static void byteswap_tensor(ggml_tensor * tensor) {
 #if defined(WHISPER_DEBUG)
 #define WHISPER_PRINT_DEBUG(...) \
     do { \
+        fprintf(stderr, "%s\n: ", "WHISPER_DEBUG0"); \
         fprintf(stderr, __VA_ARGS__); \
     } while (0)
 #else
@@ -3008,11 +3011,11 @@ const char * whisper_lang_str(int id) {
 }
 
 int whisper_lang_auto_detect_with_state(
-        struct whisper_context * ctx,
-          struct whisper_state * state,
-                           int   offset_ms,
-                           int   n_threads,
-                         float * lang_probs) {
+            struct whisper_context * ctx,
+              struct whisper_state * state,
+        struct whisper_full_params   params,
+                               int   offset_ms,
+                             float * lang_probs) {
     const int seek = offset_ms/10;
 
     if (seek < 0) {
@@ -3025,15 +3028,27 @@ int whisper_lang_auto_detect_with_state(
         return -2;
     }
 
+    if (params.abort_callback) {
+        if (params.abort_callback(ctx, state, params.abort_callback_user_data)) {
+            return -100;
+        }
+    }
+
     // run the encoder
-    if (whisper_encode_with_state(ctx, state, seek, n_threads) != 0) {
+    if (whisper_encode_with_state(ctx, state, seek, params.n_threads) != 0) {
         fprintf(stderr, "%s: failed to encode\n", __func__);
         return -6;
     }
 
     const std::vector<whisper_token> prompt = { whisper_token_sot(ctx) };
 
-    if (whisper_decode_with_state(ctx, state, prompt.data(), prompt.size(), 0, n_threads) != 0) {
+    if (params.abort_callback) {
+        if (params.abort_callback(ctx, state, params.abort_callback_user_data)) {
+            return -100;
+        }
+    }
+
+    if (whisper_decode_with_state(ctx, state, prompt.data(), prompt.size(), 0, params.n_threads) != 0) {
         fprintf(stderr, "%s: failed to decode\n", __func__);
         return -7;
     }
@@ -3083,11 +3098,11 @@ int whisper_lang_auto_detect_with_state(
 }
 
 int whisper_lang_auto_detect(
-        struct whisper_context * ctx,
-                           int   offset_ms,
-                           int   n_threads,
-                         float * lang_probs) {
-    return whisper_lang_auto_detect_with_state(ctx, ctx->state, offset_ms, n_threads, lang_probs);
+            struct whisper_context * ctx,
+        struct whisper_full_params   params,
+                               int   offset_ms,
+                             float * lang_probs) {
+    return whisper_lang_auto_detect_with_state(ctx, ctx->state, params, offset_ms, lang_probs);
 }
 
 int whisper_model_n_vocab(struct whisper_context * ctx) {
@@ -3351,6 +3366,9 @@ struct whisper_full_params whisper_full_default_params(enum whisper_sampling_str
 
         /*.encoder_begin_callback           =*/ nullptr,
         /*.encoder_begin_callback_user_data =*/ nullptr,
+
+        /*.abort_callback           =*/ nullptr,
+        /*.abort_callback_user_data =*/ nullptr,
 
         /*.logits_filter_callback           =*/ nullptr,
         /*.logits_filter_callback_user_data =*/ nullptr,
@@ -3905,11 +3923,18 @@ int whisper_full_with_state(
         }
     }
 
+    if (params.abort_callback) {
+        if (params.abort_callback(ctx, state, params.abort_callback_user_data)) {
+            fprintf(stderr, "%s: Aborted", __func__);
+            return -100;
+        }
+    }
+
     // auto-detect language if not specified
     if (params.language == nullptr || strlen(params.language) == 0 || strcmp(params.language, "auto") == 0 || params.detect_language) {
         std::vector<float> probs(whisper_lang_max_id() + 1, 0.0f);
 
-        const auto lang_id = whisper_lang_auto_detect_with_state(ctx, state, 0, params.n_threads, probs.data());
+        const auto lang_id = whisper_lang_auto_detect_with_state(ctx, state, params, 0, probs.data());
         if (lang_id < 0) {
             fprintf(stderr, "%s: failed to auto-detect language\n", __func__);
             return -3;
@@ -3972,6 +3997,13 @@ int whisper_full_with_state(
 
     // TAGS: WHISPER_DECODER_INIT
     for (int j = 1; j < n_decoders; j++) {
+        if (params.abort_callback) {
+            if (params.abort_callback(ctx, state, params.abort_callback_user_data)) {
+                fprintf(stderr, "%s: Aborted", __func__);
+                return -100;
+            }
+        }
+
         auto & decoder = state->decoders[j];
 
         if (decoder.kv_self.ctx == nullptr) {
@@ -4088,6 +4120,13 @@ int whisper_full_with_state(
         if (params.encoder_begin_callback) {
             if (params.encoder_begin_callback(ctx, state, params.encoder_begin_callback_user_data) == false) {
                 fprintf(stderr, "%s: encoder_begin_callback returned false - aborting\n", __func__);
+                break;
+            }
+        }
+
+        if (params.abort_callback) {
+            if (params.abort_callback(ctx, state, params.abort_callback_user_data)) {
+                fprintf(stderr, "%s: Aborted", __func__);
                 break;
             }
         }
@@ -4502,7 +4541,7 @@ int whisper_full_with_state(
             const auto result_len = best_decoder.sequence.result_len;
 
             const auto & tokens_cur = best_decoder.sequence.tokens;
-            
+
             const float avg_logprob = best_decoder.sequence.avg_logprobs;
 
             //WHISPER_PRINT_DEBUG("prompt_init.size() = %d, prompt.size() = %d, result_len = %d, seek_delta = %d\n", prompt_init.size(), prompt.size(), result_len, seek_delta);
@@ -4633,7 +4672,18 @@ int whisper_full(
     struct whisper_full_params   params,
                    const float * samples,
                            int   n_samples) {
-    return whisper_full_with_state(ctx, ctx->state, params, samples, n_samples);
+    signal_catch_init();
+
+    const auto current_time = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
+
+    signal_try(whisper_full) {
+        return whisper_full_with_state(ctx, ctx->state, params, samples, n_samples);
+    }
+    signal_catch(whisper_full) {
+        fprintf(stderr, "%s: aborted execution due to signal %s\n", __func__, signal_name(signal_info()->si_signo));
+        return -100;
+    }
+    signal_end(whisper_full)
 }
 
 int whisper_full_parallel(
